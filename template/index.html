@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Student Data Management</title>
+	</head>
+	<body>
+		<h1>Student Data Management</h1>
+		<h2>Add Student</h2>
+		<form action="/add" method="post" enctype="multipart/form-data">
+
+			<label for="id">Student ID:</label>
+			<input type="text" id="id" name="id" required><br>
+
+			<label for="name">Student Name:</label>
+			<input type="text" id="name" name="name" required><br>
+
+			<label for="cgpa">Student CGPA:</label>
+			<input type="number" step="0.01" id="cgpa" name="cgpa" required><br>
+
+			<label for="career">Career Interest:</label>
+			<input type="text" id="career" name="career" required><br>
+
+			<label for="image">Student Image:</label>
+			<input type="file" id="image" name="image" accept="image/*"><br>
+
+			<input type="submit" value="Add Student">
+			
+		</form>
+
+		<h2>Get Student Details</h2>
+		<form action="/get" method="get">
+			<label for="get-id">Enter Student ID:</label>
+			<input type="text" id="get-id" name="id" required>
+			<input type="submit" value="Get Student">
+		</form>
+
+		<h2>Delete Student</h2>
+		<form action="/delete" method="post">
+			<label for="delete-id">Enter Student ID:</label>
+			<input type="text" id="delete-id" name="id" required>
+			<input type="submit" value="Delete Student">
+		</form>
+	</body>
+</html>
