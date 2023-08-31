@@ -8,8 +8,7 @@ import (
 // var studentData = make(map[string]Student)
 
 func main() {
-	err := deleteFilesInDirectory("images")
-	fmt.Printf(`Error deleting images: %v`, err)
+	deleteFilesInDirectory("images")
 
 	sm := NewStudentManager()
 

@@ -60,6 +60,7 @@ func (sm *StudentManager) AddStudentRequestHandler(w http.ResponseWriter, r *htt
 
 	file, _, err := r.FormFile("image")
 	if err != nil {
+		print(err)
 		http.Error(w, "Error reading image file", http.StatusBadRequest)
 		return
 	}
@@ -75,20 +76,19 @@ func (sm *StudentManager) AddStudentRequestHandler(w http.ResponseWriter, r *htt
 		CareerInterest: career,
 		File:           file,
 		W:              w,
-		ResultChan:     resultChan, // Pass the channel to the data handler
+		ResultChan:     resultChan, // channel
 	}
 
-	// Start the data handler in a goroutine
+	// start goroutine
 	go sm.AddStudentDataHandler(data)
 
-	// Wait for the result from the data handler
+	// get result from channel
 	err = <-resultChan
 	if err != nil {
 		http.Error(w, "Error adding student data", http.StatusInternalServerError)
 		return
 	}
 
-	// Respond with success
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -130,9 +130,9 @@ func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *htt
 	}
 
 	id := r.URL.Query().Get("id")
-	student, exists := sm.studentData[id]
-	if !exists {
-		http.Error(w, "Student not found", http.StatusNotFound)
+	student, err := sm.GetStudentDataHandler(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -147,6 +147,15 @@ func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *htt
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 		return
 	}
+}
+
+func (sm *StudentManager) GetStudentDataHandler(id string) (Student, error) {
+	student, exists := sm.studentData[id]
+	if !exists {
+		return Student{}, fmt.Errorf("Student not found")
+	}
+
+	return student, nil
 }
 
 func (sm *StudentManager) DeleteStudentRequestHandler(w http.ResponseWriter, r *http.Request) {
@@ -165,21 +174,29 @@ func (sm *StudentManager) DeleteStudentRequestHandler(w http.ResponseWriter, r *
 	}
 
 	id := r.FormValue("id")
+	err = sm.DeleteStudentDataHandler(id)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (sm *StudentManager) DeleteStudentDataHandler(id string) error {
 	_, exists := sm.studentData[id]
 	if !exists {
-		http.Error(w, "Student not found", http.StatusNotFound)
-		return
+		return fmt.Errorf("Student not found")
 	}
 
 	// Delete the image file
 	imagePath := "images/" + id + ".jpg"
-	err = os.Remove(imagePath)
+	err := os.Remove(imagePath)
 	if err != nil {
-		http.Error(w, "Error deleting image", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("Error deleting image")
 	}
 
 	delete(sm.studentData, id)
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	return nil
 }
