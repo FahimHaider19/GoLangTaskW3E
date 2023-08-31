@@ -65,18 +65,17 @@ func (sm *StudentManager) AddStudentRequestHandler(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Create a new channel to communicate the result
+	// create new channel
 	resultChan := make(chan error)
 
-	// Prepare the data struct
 	data := AddStudent{
 		ID:             id,
 		Name:           name,
 		CGPA:           cgpaFloat,
 		CareerInterest: career,
 		File:           file,
-		W:              w,
-		ResultChan:     resultChan, // channel
+		// W:              w,
+		ResultChan: resultChan, // channel
 	}
 
 	// start goroutine
@@ -96,13 +95,13 @@ func (sm *StudentManager) AddStudentDataHandler(data AddStudent) {
 	imagePath := "images/" + data.ID + ".jpg"
 	out, err := os.Create(imagePath)
 	if err != nil {
-		data.ResultChan <- err // Send the error to the result channel
+		data.ResultChan <- err // send error to result channel
 		return
 	}
 
 	_, err = io.Copy(out, data.File)
 	if err != nil {
-		data.ResultChan <- err // Send the error to the result channel
+		data.ResultChan <- err // send error to result channel
 		return
 	}
 
@@ -117,7 +116,7 @@ func (sm *StudentManager) AddStudentDataHandler(data AddStudent) {
 		ImageURL:       data.ImageURL,
 	}
 
-	data.ResultChan <- nil // Send nil to indicate success
+	data.ResultChan <- nil // nil indicate success
 }
 
 func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +129,15 @@ func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *htt
 	}
 
 	id := r.URL.Query().Get("id")
-	student, err := sm.GetStudentDataHandler(id)
+
+	studentChan := make(chan Student, 1)
+	errorChan := make(chan error, 1)
+
+	go sm.GetStudentDataHandler(id, studentChan, errorChan)
+
+	student := <-studentChan
+	err := <-errorChan
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -149,13 +156,17 @@ func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *htt
 	}
 }
 
-func (sm *StudentManager) GetStudentDataHandler(id string) (Student, error) {
+func (sm *StudentManager) GetStudentDataHandler(id string, studentChan chan<- Student, errorChan chan<- error) {
 	student, exists := sm.studentData[id]
 	if !exists {
-		return Student{}, fmt.Errorf("Student not found")
+		errorChan <- fmt.Errorf("Student not found")
+		studentChan <- Student{}
+		return
 	}
 
-	return student, nil
+	studentChan <- student
+	errorChan <- nil
+	return
 }
 
 func (sm *StudentManager) DeleteStudentRequestHandler(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +185,9 @@ func (sm *StudentManager) DeleteStudentRequestHandler(w http.ResponseWriter, r *
 	}
 
 	id := r.FormValue("id")
-	err = sm.DeleteStudentDataHandler(id)
+	imageDeleteChan := make(chan error, 1)
+	go sm.DeleteStudentDataHandler(id, imageDeleteChan)
+	err = <-imageDeleteChan
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -183,20 +196,22 @@ func (sm *StudentManager) DeleteStudentRequestHandler(w http.ResponseWriter, r *
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (sm *StudentManager) DeleteStudentDataHandler(id string) error {
+func (sm *StudentManager) DeleteStudentDataHandler(id string, imageDeleteChan chan<- error) {
 	_, exists := sm.studentData[id]
 	if !exists {
-		return fmt.Errorf("Student not found")
+		imageDeleteChan <- fmt.Errorf("Student not found")
+		return
 	}
 
 	// Delete the image file
 	imagePath := "images/" + id + ".jpg"
 	err := os.Remove(imagePath)
 	if err != nil {
-		return fmt.Errorf("Error deleting image")
+		imageDeleteChan <- fmt.Errorf("Error deleting image")
+		return
 	}
 
 	delete(sm.studentData, id)
-
-	return nil
+	imageDeleteChan <- nil
+	return
 }

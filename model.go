@@ -2,7 +2,7 @@ package main
 
 import (
 	"mime/multipart"
-	"net/http"
+	// "net/http"
 )
 
 type Student struct {
@@ -20,6 +20,6 @@ type AddStudent struct {
 	CareerInterest string              `json:"careerInterest"`
 	ImageURL       string              `json:"imageUrl"`
 	File           multipart.File      `json:"file"`
-	W              http.ResponseWriter `json:"w"`
+	// W              http.ResponseWriter `json:"w"`
 	ResultChan     chan error          `json:"resultChan"`
 }
