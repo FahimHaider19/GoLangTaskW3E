@@ -6,17 +6,18 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	// "sync"
 )
 
 type StudentManager struct {
-	studentData map[string]Student
+	studentData map[int]Student
 	// mu          sync.Mutex
 }
 
 func NewStudentManager() *StudentManager {
 	return &StudentManager{
-		studentData: make(map[string]Student),
+		studentData: make(map[int]Student),
 	}
 }
 
@@ -39,24 +40,44 @@ func (sm *StudentManager) AddStudentRequestHandler(w http.ResponseWriter, r *htt
 		return
 	}
 
+	idForm := r.FormValue("id")
+	nameForm := r.FormValue("name")
+	cgpaForm := r.FormValue("cgpa")
+	careerForm := r.FormValue("career")
+
+	if idForm == "" || nameForm == "" || cgpaForm == "" || careerForm == "" {
+		http.Error(w, "All fields are required", http.StatusBadRequest)
+		return
+	}
+
 	err := r.ParseMultipartForm(10 << 20) // file size limit 10mb
 	if err != nil {
 		http.Error(w, "Error parsing form", http.StatusBadRequest)
 		return
 	}
 
-	id := r.FormValue("id")
+	id, err := strconv.Atoi(r.FormValue("id"))
+	if err != nil || idForm != strconv.Itoa(id) {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	name := r.FormValue("name")
+
+	cgpa, err := strconv.ParseFloat(r.FormValue("cgpa"), 64)
+	if err != nil || cgpa < 0 || cgpa > 4 {
+		http.Error(w, "Invalid CGPA", http.StatusBadRequest)
+		return
+	}
+
+	career := r.FormValue("career")
+
 	if _, exists := sm.studentData[id]; exists {
 		http.Error(w, "Student with this ID already exists", http.StatusBadRequest)
 		return
 	}
 
-	name := r.FormValue("name")
-	cgpa := r.FormValue("cgpa")
-	career := r.FormValue("career")
-
-	cgpaFloat := 0.0
-	fmt.Sscanf(cgpa, "%f", &cgpaFloat)
+	// fmt.Sscanf(cgpa, "%f", &cgpaFloat)
 
 	file, _, err := r.FormFile("image")
 	if err != nil {
@@ -71,11 +92,12 @@ func (sm *StudentManager) AddStudentRequestHandler(w http.ResponseWriter, r *htt
 	data := AddStudent{
 		ID:             id,
 		Name:           name,
-		CGPA:           cgpaFloat,
+		CGPA:           cgpa,
 		CareerInterest: career,
 		File:           file,
-		// W:              w,
-		ResultChan: resultChan, // channel
+		ResultChan:     resultChan, // channel
+		W:              w,
+		R:              r,
 	}
 
 	// start goroutine
@@ -88,11 +110,22 @@ func (sm *StudentManager) AddStudentRequestHandler(w http.ResponseWriter, r *htt
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	// w.WriteHeader(http.StatusOK)
+	tmpl, err := template.ParseFiles("template/card.html")
+	if err != nil {
+		http.Error(w, "Error rendering template", http.StatusInternalServerError)
+		return
+	}
+
+	err = tmpl.Execute(w, "Student added successfully")
+	if err != nil {
+		http.Error(w, "Error rendering template", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (sm *StudentManager) AddStudentDataHandler(data AddStudent) {
-	imagePath := "images/" + data.ID + ".jpg"
+	imagePath := "images/" + strconv.Itoa(data.ID) + ".jpg"
 	out, err := os.Create(imagePath)
 	if err != nil {
 		data.ResultChan <- err // send error to result channel
@@ -105,7 +138,7 @@ func (sm *StudentManager) AddStudentDataHandler(data AddStudent) {
 		return
 	}
 
-	imageURL := "/images/" + data.ID + ".jpg"
+	imageURL := "/images/" + strconv.Itoa(data.ID) + ".jpg"
 	data.ImageURL = imageURL
 
 	sm.studentData[data.ID] = Student{
@@ -117,6 +150,8 @@ func (sm *StudentManager) AddStudentDataHandler(data AddStudent) {
 	}
 
 	data.ResultChan <- nil // nil indicate success
+
+	http.Redirect(data.W, data.R, "/msg?Message=Student added successfully", http.StatusSeeOther)
 }
 
 func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +163,17 @@ func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *htt
 		return
 	}
 
-	id := r.URL.Query().Get("id")
+	idQuery := r.URL.Query().Get("id")
+	if idQuery == "" {
+		http.Error(w, "ID not provided", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(idQuery)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
 
 	studentChan := make(chan Student, 1)
 	errorChan := make(chan error, 1)
@@ -136,7 +181,7 @@ func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *htt
 	go sm.GetStudentDataHandler(id, studentChan, errorChan)
 
 	student := <-studentChan
-	err := <-errorChan
+	err = <-errorChan
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -156,7 +201,7 @@ func (sm *StudentManager) GetStudentRequestHandler(w http.ResponseWriter, r *htt
 	}
 }
 
-func (sm *StudentManager) GetStudentDataHandler(id string, studentChan chan<- Student, errorChan chan<- error) {
+func (sm *StudentManager) GetStudentDataHandler(id int, studentChan chan<- Student, errorChan chan<- error) {
 	student, exists := sm.studentData[id]
 	if !exists {
 		errorChan <- fmt.Errorf("Student not found")
@@ -184,7 +229,18 @@ func (sm *StudentManager) DeleteStudentRequestHandler(w http.ResponseWriter, r *
 		return
 	}
 
-	id := r.FormValue("id")
+	idForm := r.FormValue("id")
+	if idForm == "" {
+		http.Error(w, "ID not provided", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(idForm)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
 	imageDeleteChan := make(chan error, 1)
 	go sm.DeleteStudentDataHandler(id, imageDeleteChan)
 	err = <-imageDeleteChan
@@ -193,10 +249,10 @@ func (sm *StudentManager) DeleteStudentRequestHandler(w http.ResponseWriter, r *
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, "/msg?Message=Student deleted successfully", http.StatusSeeOther)
 }
 
-func (sm *StudentManager) DeleteStudentDataHandler(id string, imageDeleteChan chan<- error) {
+func (sm *StudentManager) DeleteStudentDataHandler(id int, imageDeleteChan chan<- error) {
 	_, exists := sm.studentData[id]
 	if !exists {
 		imageDeleteChan <- fmt.Errorf("Student not found")
@@ -204,7 +260,7 @@ func (sm *StudentManager) DeleteStudentDataHandler(id string, imageDeleteChan ch
 	}
 
 	// Delete the image file
-	imagePath := "images/" + id + ".jpg"
+	imagePath := "images/" + strconv.Itoa(id) + ".jpg"
 	err := os.Remove(imagePath)
 	if err != nil {
 		imageDeleteChan <- fmt.Errorf("Error deleting image")
@@ -214,4 +270,27 @@ func (sm *StudentManager) DeleteStudentDataHandler(id string, imageDeleteChan ch
 	delete(sm.studentData, id)
 	imageDeleteChan <- nil
 	return
+}
+
+func (sm *StudentManager) MessageHandler(w http.ResponseWriter, r *http.Request) {
+	msg := r.URL.Query().Get("Message")
+
+	if msg == "" {
+		http.Error(w, "Error! Something went wrong", http.StatusBadRequest)
+		return
+	}
+
+	tmpl, err := template.ParseFiles("template/msg.html")
+	if err != nil {
+		http.Error(w, "Error parsing template", http.StatusInternalServerError)
+		return
+	}
+
+	data := MessageData{Message: msg}
+
+	err = tmpl.Execute(w, data)
+	if err != nil {
+		http.Error(w, "Error executing template Message", http.StatusInternalServerError)
+		return
+	}
 }
